@@ -141,4 +141,4 @@ Copyright (C) 2018 [Center for the Application of Information Technologies](http
 
 Apache License 2.0, see [LICENSE](https://github.com/prometheus/haproxy_exporter/blob/master/LICENSE).
 
-This is program is free software.
+This program is free software.
