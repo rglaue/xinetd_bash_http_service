@@ -1,0 +1,17 @@
+# default: on 
+# description: xinetdhttpservice
+service xinetdhttpservice
+{ 
+# this is a config for xinetd, place it in /etc/xinetd.d/
+        disable = no 
+        flags           = REUSE 
+        socket_type     = stream 
+        type            = UNLISTED
+        port            = 8080 
+        wait            = no 
+        user            = nobody 
+        server          = /usr/bin/xinetdhttpservice
+        log_on_failure  += USERID 
+        only_from       = 0.0.0.0/0
+        per_source      = UNLIMITED 
+}
