@@ -136,4 +136,9 @@ WEIGHT_VALUE=119
 
 ## License
 
+Copyright (C) 2018 [Center for the Application of Information Technologies](http://www.cait.org),
+[Western Illinois University](http://www.wiu.edu). All rights reserved.
+
 Apache License 2.0, see [LICENSE](https://github.com/prometheus/haproxy_exporter/blob/master/LICENSE).
+
+This is program is free software.
