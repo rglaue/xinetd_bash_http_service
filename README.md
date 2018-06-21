@@ -11,6 +11,34 @@ own as opposed to an xinetd application. However, if your needs are light, and
 you want HTTP REST-like capabilities, perhaps this meets your needs.
 
 
+## Using for your purposes
+
+Edit the [xinetdhttpservice.sh][] file, modifying the script at the bottom to
+add your custom code. Look for the section titled "Add your health checking
+logic below". You can modify or remove the example code that is in this
+section.
+
+```bash
+#
+# Add your health checking logic below
+#
+# If --http-status is provided, http_response() function will send the value in
+# an HTTP response. Otherwise the value is displayed alone.
+#
+
+# If something unhealthy was detected, then:
+decrease_health_value
+
+# display response
+display_health_value
+http_response 200 "Success"
+
+# End of program
+```
+
+[xinetdhttpservice.sh]: https://github.com/rglaue/xinetd_bash_http_service/blob/master/xinetdhttpservice.sh
+
+
 
 ## Runtime parameters
 
@@ -89,8 +117,7 @@ WEIGHT_VALUE=119
 
 ### As an xinetd HTTP service
 
-To configure this script as an xinetd service, add the
-[xinetdhttpservice_config]: xinetdhttpservice_config
+To configure this script as an xinetd service, add the [xinetdhttpservice_config][]
 file to the system /etc/xinetd.d/ directory.
 
 Then restart xinetd
@@ -103,6 +130,9 @@ Then query the service via an HTTP call
 linux$ curl http://0.0.0.0:8080/weight-value?inverse-weight=0&max-weight=120
 WEIGHT_VALUE=119
 ```
+
+[xinetdhttpservice_config]: https://github.com/rglaue/xinetd_bash_http_service/blob/master/xinetdhttpservice_config
+
 
 ## License
 
