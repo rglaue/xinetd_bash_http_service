@@ -29,8 +29,10 @@ section.
 # If something unhealthy was detected, then:
 decrease_health_value
 
-# display response
+# display health value response, and exit
 display_health_value
+
+# send a http_response of 200
 http_response 200 "Success"
 
 # End of program
@@ -44,6 +46,10 @@ http_response 200 "Success"
 
 ```bash
 linux$ xinetdhttpservice.sh --help
+xinetd_http_service 0.2
+https://github.com/rglaue/xinetd_bash_http_service
+Copyright (C) 2018 Russell Glaue, CAIT, WIU <http://www.cait.org>
+
 Usage: xinetd_http_service [options]
 Description: bash script called by xinetd to service a HTTP request; a farmework for reporting on health
 
@@ -71,6 +77,8 @@ Examples:
 
 ### Test to see how HTTP headers are parsed
 
+#### HTTP GET
+
 ```bash
 linux$ echo "GET /test123?var1=val1 HTTP/1.0" | xinetdhttpservice.sh --http-status --show-headers
 HTTP/1.1 200 OK
@@ -85,6 +93,83 @@ HTTP_REQ_URI_PATH=/test123
 HTTP_REQ_METHOD=GET
 HTTP_REQ_URI_PARAMS=var1=val1
 ```
+
+#### HTTP POST
+
+```bash
+linux$ xinetdhttpservice.sh --show-headers <<HTTP_EOF
+POST /weight-value?max-weight=200 HTTP/1.1
+User-Agent: noagent/1.0
+Host: 127.0.0.1:8080
+Accept: */*
+Content-Length: 78
+Content-Type: application/x-www-form-urlencoded
+
+{
+  "type": "json",
+  "key": "animal",
+  "color": "brown",
+  "name": "bear"
+}
+HTTP_EOF
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Connection: close
+Content-Length: 515
+
+HTTP_CONTENT_LENGTH=78
+HTTP_USER_AGENT=noagent/1.0
+HTTP_REQ_VERSION=HTTP/1.1
+HTTP_POST_CONTENT={
+HTTP_ACCEPT=*/*
+HTTP_CONTENT_TYPE=application/x-www-form-urlencoded
+HTTP_REQUEST=POST /weight-value?max-weight=200 HTTP/1.1
+HTTP_REQ_URI=/weight-value?max-weight=200
+HTTP_REQ_URI_PATH=/weight-value
+HTTP_REQ_METHOD=POST
+HTTP_REQ_URI_PARAMS=max-weight=200
+HTTP_SERVER=127.0.0.1:8080
+--BEGIN:HTTP_POST_CONTENT--
+{
+  "type": "json",
+  "key": "animal",
+  "color": "brown",
+  "name": "bear"
+}
+
+--END:HTTP_POST_CONTENT--
+```
+
+#### HTTP POST Config: MAX_HTTP_POST_LENGTH
+
+At the top of the xinetdhttpservice.sh bash script, there is a global variable
+that define the maximum allowed length of posted data. Posted data that has a
+length greater than this will be cut off.
+
+```bash
+MAX_HTTP_POST_LENGTH=200
+```
+
+#### HTTP POST Config: READ_BUFFER_LENGTH
+
+If a non-compliant HTTP client is posting data that is shorter than the
+Content-Length, then the READ_BUFFER_LENGTH should be set to 1. By default
+this value is the size of the Content-Length, which is more efficient.
+
+```bash
+  # If the value of Content-Length is greater than the actual content, then
+  # read will timeout and never allow the collection from standard input.
+  # This is overcome by reading one character at a time.
+  #READ_BUFFER_LENGTH=1
+  # If you are sure the value of Content-Length always equals the length of the
+  # content, then all of standard input can be read in at one time
+  READ_BUFFER_LENGTH=$DATA_LENGTH
+```
+
+Note: The maximum length of posted data that is accepted is the Content-Length
+or the MAX_HTTP_POST_LENGTH, whichever is shorter. If the HTTP client is
+posting data, yet provides a Content-Length of 0, no data will be read in.
+
 
 ### Test the HTTP output
 

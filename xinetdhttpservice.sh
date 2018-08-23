@@ -7,66 +7,9 @@
 PROG=xinetd_http_service
 DESCRIPTION="bash script called by xinetd to service a HTTP request; a farmework for reporting on health"
 SYNOPSIS="${PROG} [options]"
-VERSION=0.1
-LASTMOD=20180621
-
-#
-# Read the HTTP headers from standard input, and parse and store their
-# values in environment variables.
-#
-while read -t 0.01 line; do
-    if [ -z "$line" ]; then break; fi
-    if echo "${line}" | grep -qi "^GET\|POST\|PUT\|DELETE"; then
-      # GET /test123?r=123 HTTP/1.1
-      export HTTP_REQUEST="${line}"
-      export HTTP_REQ_METHOD="$(echo ${line}|cut -d" " -f 1)"
-      export HTTP_REQ_URI="$(echo ${line}|cut -d" " -f 2)"
-      export HTTP_REQ_URI_PATH="$(echo ${HTTP_REQ_URI}|cut -d"?" -f 1)"
-      if echo "$HTTP_REQ_URI"|grep -q '?'; then
-        export HTTP_REQ_URI_PARAMS="$(echo ${HTTP_REQ_URI}|cut -d"?" -f 2-)"
-      else
-	export HTTP_REQ_URI_PARAMS=""
-      fi
-      export HTTP_REQ_VERSION="$(echo ${line}|cut -d" " -f 3-)"
-    elif echo "${line}" | grep -qi "^User-Agent:"; then
-      # User-Agent: curl/7.29.0
-      export HTTP_USER_AGENT="$(echo ${line}|cut -d" " -f 2-)"
-    elif echo "${line}" | grep -qi "^Host:"; then
-      # Host: 0.0.0.0:8081
-      export HTTP_SERVER="$(echo ${line}|cut -d" " -f 2-)"
-    elif echo "${line}" | grep -qi "^Accept::"; then
-      # Accept: */*
-      export HTTP_ACCEPT="$(echo ${line}|cut -d" " -f 2-)"
-    else
-      break
-    fi
-done
-
-#
-# A function to parse HTTP_REQ_URI_PARAMS and return the value of a given
-# parameter name
-# Example:
-#   param_value=$(get_http_req_uri_params_value "param_name")
-#   if [ "$?" -eq 1 ]; then echo "param_name" not provided; fi
-#
-get_http_req_uri_params_value () {
-    # Example: "a=123&b=456&c&d=789"
-    PARAM_NAME=$1
-    IFS='&' read -r -a params <<< "$HTTP_REQ_URI_PARAMS"
-    for element in "${params[@]}"; do
-      element_name=$(echo $element | cut -d"=" -f 1)
-      if [ "$element_name" == "$PARAM_NAME" ]; then
-        if echo "$element" | grep -q "="; then
-          element_value=$(echo $element | cut -d"=" -f 2-)
-          echo "$element_value"
-        else
-          echo ""
-        fi
-        exit 0
-      fi
-    done
-    exit 1
-}
+VERSION=0.2
+LASTMOD=20180822
+MAX_HTTP_POST_LENGTH=200
 
 #
 # Handle the program's usage documentation
@@ -77,6 +20,8 @@ print_usage () {
 }
 
 print_help ()  {
+    print_version
+    echo
     print_usage
     cat << EOF
 
@@ -102,6 +47,7 @@ EOF
 
 print_version () {
     echo "$PROG $VERSION"
+    echo "https://github.com/rglaue/xinetd_bash_http_service"
     echo "Copyright (C) 2018 Russell Glaue, CAIT, WIU <http://www.cait.org>"
 }
 
@@ -110,6 +56,7 @@ print_version () {
 #
 
 # Set the default values before parsing the parameters
+: ${VERBOSE:=0}
 : ${OPT_HTTP_STATUS:=0}
 : ${OPT_HEALTH_VALUE:=0}
 : ${OPT_WEIGHT_VALUE:=0}
@@ -153,6 +100,117 @@ while true ; do
         *) break ;;
     esac
 done
+
+#
+# Read the HTTP headers from standard input, and parse and store their
+# values in environment variables.
+#
+while read -t 0.01 line; do
+    line=${line//$'\r'}
+    if [ $VERBOSE -ge 1 ]; then
+      echo "H: $line"
+    fi
+    if [ -z "$line" ]; then break; fi
+    if echo "${line}" | grep -qi "^GET\|POST\|PUT\|DELETE"; then
+      # GET /test123?r=123 HTTP/1.1
+      export HTTP_REQUEST="${line}"
+      export HTTP_REQ_METHOD="$(echo "${line}"|cut -d" " -f 1)"
+      export HTTP_REQ_URI="$(echo "${line}"|cut -d" " -f 2)"
+      export HTTP_REQ_URI_PATH="$(echo "${HTTP_REQ_URI}"|cut -d"?" -f 1)"
+      if echo "$HTTP_REQ_URI"|grep -q '?'; then
+        export HTTP_REQ_URI_PARAMS="$(echo "${HTTP_REQ_URI}"|cut -d"?" -f 2-)"
+      else
+	export HTTP_REQ_URI_PARAMS=""
+      fi
+      export HTTP_REQ_VERSION="$(echo "${line}"|cut -d" " -f 3-)"
+    elif echo "${line}" | grep -qi "^User-Agent:"; then
+      # User-Agent: curl/7.29.0
+      export HTTP_USER_AGENT="$(echo "${line}"|cut -d" " -f 2-)"
+    elif echo "${line}" | grep -qi "^Host:"; then
+      # Host: 0.0.0.0:8081
+      export HTTP_SERVER="$(echo "${line}"|cut -d" " -f 2-)"
+    elif echo "${line}" | grep -qi "^Accept:"; then
+      # Accept: */*
+      export HTTP_ACCEPT="$(echo "${line}"|cut -d" " -f 2-)"
+      #continue
+    elif echo "${line}" | grep -qi "^Content-Length:"; then
+      # Content-Length: 5
+      export HTTP_CONTENT_LENGTH="$(echo "${line}"|cut -d" " -f 2-)"
+    elif echo "${line}" | grep -qi "^Content-Type:"; then
+      # Content-Type: application/x-www-form-urlencoded
+      export HTTP_CONTENT_TYPE="$(echo "${line}"|cut -d" " -f 2-)"
+    elif [ ${#line} -ge 1 ]; then
+      # <any header>
+      continue
+    else
+      break
+      #continue
+    fi
+done
+
+#
+# Read the HTTP POST data from standard input
+# This does not support a Content-type of multipart/mixed
+# This does not support chunking. It expects, and only allows, posted data to
+#   be the size of the Content-Length.
+#
+if [ "${HTTP_REQ_METHOD}" == "POST" ] && [ ${HTTP_CONTENT_LENGTH} -ge 1 ]; then
+  export HTTP_POST_CONTENT=""
+  DATA_LENGTH=$HTTP_CONTENT_LENGTH
+  if [ ${DATA_LENGTH} -gt ${MAX_HTTP_POST_LENGTH} ]; then
+    DATA_LENGTH=$MAX_HTTP_POST_LENGTH
+  fi
+  # If the value of Content-Length is greater than the actual content, then
+  # read will timeout and never allow the collection from standard input.
+  # This is overcome by reading one character at a time.
+  #READ_BUFFER_LENGTH=1
+  # If you are sure the value of Content-Length always equals the length of the
+  # content, then all of standard input can be read in at one time
+  READ_BUFFER_LENGTH=$DATA_LENGTH
+  #
+  # Read POST data via standard input
+  while IFS= read -N $READ_BUFFER_LENGTH -r -t 0.01 post_buffer; do
+    let "DATA_LENGTH = DATA_LENGTH - READ_BUFFER_LENGTH"
+    HTTP_POST_CONTENT="${HTTP_POST_CONTENT}${post_buffer}"
+    # Stop reading if we reach the content length, max length, or expected length
+    if [ ${#HTTP_POST_CONTENT} -ge ${HTTP_CONTENT_LENGTH} ]; then
+      break;
+    elif [ ${#HTTP_POST_CONTENT} -ge ${MAX_HTTP_POST_LENGTH} ]; then
+      break;
+    elif [ ${DATA_LENGTH} -le 0 ]; then
+      break;
+    fi
+  done
+  if [ $VERBOSE -ge 1 ]; then
+    echo -e "D: $HTTP_POST_CONTENT"
+  fi
+fi
+
+#
+# A function to parse HTTP_REQ_URI_PARAMS and return the value of a given
+# parameter name
+# Example:
+#   param_value=$(get_http_req_uri_params_value "param_name")
+#   if [ "$?" -eq 1 ]; then echo "param_name" not provided; fi
+#
+get_http_req_uri_params_value () {
+    # Example: "a=123&b=456&c&d=789"
+    PARAM_NAME=$1
+    IFS='&' read -r -a params <<< "$HTTP_REQ_URI_PARAMS"
+    for element in "${params[@]}"; do
+      element_name="$(echo "$element" | cut -d"=" -f 1)"
+      if [ "$element_name" == "$PARAM_NAME" ]; then
+        if echo "$element" | grep -q "="; then
+          element_value="$(echo "$element" | cut -d"=" -f 2-)"
+          echo "$element_value"
+        else
+          echo ""
+        fi
+        exit 0
+      fi
+    done
+    exit 1
+}
 
 #
 # Parse parameters from the HTTP request
@@ -240,13 +298,15 @@ display_health_value () {
     fi
 }
 
-
 #
 # --show-headers
 # Show the HTTP headers as parsed into the environment variables
 #
 if [ $OPT_SHOW_HEADERS -eq 1 ]; then
     THIS_HEADERS="$(env | grep '^HTTP')"
+    if [ ! -z "$HTTP_POST_CONTENT" ]; then
+      THIS_HEADERS="${THIS_HEADERS}\n--BEGIN:HTTP_POST_CONTENT--\n${HTTP_POST_CONTENT}\n--END:HTTP_POST_CONTENT--\n"
+    fi
     if echo $THIS_HEADERS | grep -q '^HTTP'; then
       http_response 200 "$THIS_HEADERS"
     else
@@ -265,9 +325,10 @@ fi
 # If something unhealthy was detected, then:
 decrease_health_value
 
-# display response
+# display health value response, and exit
 display_health_value
+
+# send a http_response of 200
 http_response 200 "Success"
 
 # End of program
-
