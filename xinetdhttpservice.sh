@@ -237,7 +237,11 @@ fi
 HEALTH_VALUE=0
 
 #
-# The HTTP response
+# The HTTP response. This will return a HTTP response with the provided HTTP
+#   code and a descriptive message.
+# Example:
+#   http_response 301 "You accessed something that does not exist"
+#   http_response 200 '{ "status": "success" }'
 #
 http_response () {
     HTTP_CODE=$1
@@ -246,6 +250,8 @@ http_response () {
   if [ $OPT_HTTP_STATUS -eq 1 ]; then
     if [ "$HTTP_CODE" -eq 503 ]; then
       echo -en "HTTP/1.1 503 Service Unavailable\r\n" 
+    elif [ "$HTTP_CODE" -eq 301 ]; then
+      echo -en "HTTP/1.1 301 Not Found\r\n" 
     elif [ "$HTTP_CODE" -eq 200 ]; then
       echo -en "HTTP/1.1 200 OK\r\n" 
     else
@@ -265,10 +271,17 @@ http_response () {
 #
 # functions to compute a weight based on a health value
 #
+# decrease_health_value - decreases the global health value
+# Example:
+#   decrease_health_value
 decrease_health_value () {
     let HEALTH_VALUE--
 }
 
+# displays the global helath value in a HTTP response or standard output for
+#   the command line, and then exits.
+# Example:
+#   display_health_value
 display_health_value () {
     if [ $OPT_HEALTH_VALUE -eq 1 ]; then
       http_response 200 "HEALTH_VALUE=$HEALTH_VALUE"

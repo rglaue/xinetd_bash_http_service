@@ -40,6 +40,36 @@ http_response 200 "Success"
 
 [xinetdhttpservice.sh]: https://github.com/rglaue/xinetd_bash_http_service/blob/master/xinetdhttpservice.sh
 
+### Available functions
+
+#### get_http_req_uri_params_value &lt;param-name&gt;
+This function will obtain the value of a paramter provided in the HTTP request.
+```bash
+# if GET Request URI (GET_REQ_URI) is "/?uptime=seconds&format=json"
+format_value=$(get_http_req_uri_params_value "format")
+# Result: format_value == json
+```
+
+#### http_response &lt;http-code&gt; &lt;message&gt;
+This function will return a HTTP response and exit.
+It will do nothing and return if the --http-response option is not set to 1,
+or if the request came from the command line and not as a HTTP request.
+```bash
+http_response 301 "I did not find what you were looking for."
+```
+
+#### decrease_health_value
+This function will decrease the global health value
+```bash
+decrease_health_value
+```
+
+#### display_health_value
+This function displays the global helath value in a HTTP response or standard
+output for the command line, and then exits.
+```bash
+display_health_value
+```
 
 
 ## Runtime parameters
@@ -210,7 +240,7 @@ Then restart xinetd
 CentOS-Flavors$ systemctl restart xinetd
 ```
 
-Then query the service via an HTTP call
+Then query the service via a HTTP call
 ```bash
 linux$ curl http://0.0.0.0:8080/weight-value?inverse-weight=0&max-weight=120
 WEIGHT_VALUE=119
