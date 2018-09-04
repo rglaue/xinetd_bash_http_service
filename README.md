@@ -10,6 +10,13 @@ needs to store stateful information, consider writing a daemon that runs on its
 own as opposed to an xinetd application. However, if your needs are light, and
 you want HTTP REST-like capabilities, perhaps this meets your needs.
 
+##### Version 0.3 with support for HA Proxy HTTP header
+Version 0.3 was updated to parse HA Proxy's `X-Haproxy-Server-State` HTTP
+header when HAProxy uses the configuration `option httpchk` with `http-check
+send-state`. By default, this xinetd script can send results back to HA Proxy
+with both `option tcp-check` and `option httpchk` without differing
+configuration. See **HA Proxy Use** below.
+
 
 ## Using for your purposes
 
@@ -42,7 +49,7 @@ http_response 200 "Success"
 
 ### Available functions
 
-#### get_http_req_uri_params_value &lt;param-name&gt;
+* #### get_http_req_uri_params_value &lt;param-name&gt;
 This function will obtain the value of a paramter provided in the HTTP request.
 ```bash
 # if GET Request URI (GET_REQ_URI) is "/?uptime=seconds&format=json"
@@ -50,7 +57,21 @@ format_value=$(get_http_req_uri_params_value "format")
 # Result: format_value == json
 ```
 
-#### http_response &lt;http-code&gt; &lt;message&gt;
+* #### get_haproxy_server_state_value &lt;param-name&gt;
+This function will obtain the value of a paramter provided in the HTTP request
+header **X-Haproxy-Server-State**.
+```bash
+# if `X-Haproxy-Server-State: UP; name=backend/server; node=haproxy-name; weight=1/2; scur=0/1; qcur=0; throttle=86%
+HA_NAME=$(get_haproxy_server_state_value name)
+# Result: HA_NAME == backend/server
+HA_WEIGHT=$(get_haproxy_server_state_value weight)
+# Result: HA_WEIGHT == 1/2
+HA_STATE=$(get_haproxy_server_state_value state)
+# Result: HA_STATE == UP
+```
+
+
+* #### http_response &lt;http-code&gt; &lt;message&gt;
 This function will return a HTTP response and exit.
 It will do nothing and return if the --http-response option is not set to 1,
 or if the request came from the command line and not as a HTTP request.
@@ -58,13 +79,13 @@ or if the request came from the command line and not as a HTTP request.
 http_response 301 "I did not find what you were looking for."
 ```
 
-#### decrease_health_value
+* #### decrease_health_value
 This function will decrease the global health value
 ```bash
 decrease_health_value
 ```
 
-#### display_health_value
+* #### display_health_value
 This function displays the global helath value in a HTTP response or standard
 output for the command line, and then exits.
 ```bash
@@ -76,7 +97,7 @@ display_health_value
 
 ```bash
 linux$ xinetdhttpservice.sh --help
-xinetd_http_service 0.2
+xinetd_http_service 0.3
 https://github.com/rglaue/xinetd_bash_http_service
 Copyright (C) 2018 Russell Glaue, CAIT, WIU <http://www.cait.org>
 
@@ -107,7 +128,7 @@ Examples:
 
 ### Test to see how HTTP headers are parsed
 
-#### HTTP GET
+* #### HTTP GET
 
 ```bash
 linux$ echo "GET /test123?var1=val1 HTTP/1.0" | xinetdhttpservice.sh --http-status --show-headers
@@ -124,7 +145,7 @@ HTTP_REQ_METHOD=GET
 HTTP_REQ_URI_PARAMS=var1=val1
 ```
 
-#### HTTP POST
+* #### HTTP POST
 
 ```bash
 linux$ xinetdhttpservice.sh --show-headers <<HTTP_EOF
@@ -170,7 +191,7 @@ HTTP_SERVER=127.0.0.1:8080
 --END:HTTP_POST_CONTENT--
 ```
 
-#### HTTP POST Config: MAX_HTTP_POST_LENGTH
+* #### HTTP POST Config: MAX_HTTP_POST_LENGTH
 
 At the top of the xinetdhttpservice.sh bash script, there is a global variable
 that define the maximum allowed length of posted data. Posted data that has a
@@ -180,7 +201,7 @@ length greater than this will be cut off.
 MAX_HTTP_POST_LENGTH=200
 ```
 
-#### HTTP POST Config: READ_BUFFER_LENGTH
+* #### HTTP POST Config: READ_BUFFER_LENGTH
 
 If a non-compliant HTTP client is posting data that is shorter than the
 Content-Length, then the READ_BUFFER_LENGTH should be set to 1. By default
@@ -247,6 +268,62 @@ WEIGHT_VALUE=119
 ```
 
 [xinetdhttpservice_config]: https://github.com/rglaue/xinetd_bash_http_service/blob/master/xinetdhttpservice_config
+
+
+### As a HAProxy server check
+
+First setup the xinetd service, as described previously. Once setup, you should
+be able to get the service status via TCP or HTTP check in HAProxy. This can be
+tested as follows. Both TCP and HTTP checks will work without differing
+configuration in the xinetd_bash_http_service script because the `http_response`
+function only delivers output if the client made an HTTP request.
+
+* #### Testing the health checks
+```bash
+# TCP Checks
+shell$ echo | nc 192.168.2.11 8080
+Service OK
+# HTTP Checks
+shell$ curl http://192.168.2.11:8080
+Service OK
+```
+
+* #### Ensure xinetd script outputs for both HTTP and TCP
+```bash
+# At the end of your xinetd_bash_http_service script
+# send the HTTP response and exit
+http_response 200 "Service OK"
+# or send a TCP response and exit
+echo "Service OK"
+exit 0
+# end of script
+```
+
+* #### Configure HA Proxy
+```bash
+frontend some-fe-server
+    bind 192.168.1.1:1234
+    mode tcp
+    default_backend some-be-server-pool
+
+# Both of these backends will work, but use http checks with the
+# 'http-check send-state' if you want to receive the HA Proxy state.
+
+# tcp checks
+#backend some-be-server-pool
+#    option tcp-check
+#    tcp-check expect string "Service OK"
+#    server srv1 192.168.2.11:80 check port 8080
+#    server srv2 192.168.2.12:80 check port 8080
+
+# http checks
+backend some-be-server-pool
+    option httpchk GET /
+    http-check send-state
+    http-check expect string "Service OK"
+    server srv1 192.168.2.11:80 check port 8080
+    server srv2 192.168.2.12:80 check port 8080
+```
 
 
 ## License

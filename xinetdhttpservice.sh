@@ -7,8 +7,8 @@
 PROG=xinetd_http_service
 DESCRIPTION="bash script called by xinetd to service a HTTP request; a farmework for reporting on health"
 SYNOPSIS="${PROG} [options]"
-VERSION=0.2
-LASTMOD=20180822
+VERSION=0.3
+LASTMOD=20180904
 MAX_HTTP_POST_LENGTH=200
 
 #
@@ -139,6 +139,9 @@ while read -t 0.01 line; do
     elif echo "${line}" | grep -qi "^Content-Type:"; then
       # Content-Type: application/x-www-form-urlencoded
       export HTTP_CONTENT_TYPE="$(echo "${line}"|cut -d" " -f 2-)"
+    elif echo "${line}" | grep -qi "^X-Haproxy-Server-State:"; then
+      # X-Haproxy-Server-State: UP; etc..
+      export HTTP_HAPROXY_SERVER_STATE="$(echo "${line}"|cut -d" " -f 2-)"
     elif [ ${#line} -ge 1 ]; then
       # <any header>
       continue
@@ -213,8 +216,41 @@ get_http_req_uri_params_value () {
 }
 
 #
+# A function for HAProxy
+# Parses the value in the HTTP header "X-Haproxy-Server-State"
+# Examples:
+#   HA_WEIGHT=$(get_haproxy_server_state_value weight) # HA_WEIGHT="1/2" 
+#   HA_STATE=$(get_haproxy_server_state_value state)   # UP, DOWN, NOLB
+#
+get_haproxy_server_state_value () {
+    # Example: "UP; name=backend/server; node=haproxy-name; weight=1/2; scur=0/1; qcur=0; throttle=86%"
+    PARAM_NAME=$1
+    IFS='; ' read -r -a params <<< "$HTTP_HAPROXY_SERVER_STATE"
+    if [ "$PARAM_NAME" == "state" ]; then
+      echo "${params[0]}"
+      exit 0
+    fi
+    for element in "${params[@]}"; do
+      element_name="$(echo "$element" | cut -d"=" -f 1)"
+      if [ "$element_name" == "$PARAM_NAME" ]; then
+        if echo "$element" | grep -q "="; then
+          element_value="$(echo "$element" | cut -d"=" -f 2-)"
+          echo "$element_value"
+        else
+          echo ""
+        fi
+        exit 0
+      fi
+    done
+    exit 1
+}
+
+#
 # Parse parameters from the HTTP request
 #
+if [ ! -z "${HTTP_REQ_URI_PATH}" ]; then
+  OPT_HTTP_STATUS=1
+fi
 if echo ${HTTP_REQ_URI_PATH} | grep -qi "health-value"; then
   OPT_HTTP_STATUS=1
   OPT_HEALTH_VALUE=1
@@ -341,7 +377,7 @@ decrease_health_value
 # display health value response, and exit
 display_health_value
 
-# send a http_response of 200
+# send a http_response of 200, and exit
 http_response 200 "Success"
 
 # End of program
