@@ -61,7 +61,7 @@ format_value=$(get_http_req_uri_params_value "format")
 This function will obtain the value of a paramter provided in the HTTP request
 header **X-Haproxy-Server-State**.
 ```bash
-# if `X-Haproxy-Server-State: UP; name=backend/server; node=haproxy-name; weight=1/2; scur=0/1; qcur=0; throttle=86%
+# if X-Haproxy-Server-State: UP; name=backend/server; node=haproxy-name; weight=1/2; scur=0/1; qcur=0; throttle=86%
 HA_NAME=$(get_haproxy_server_state_value name)
 # Result: HA_NAME == backend/server
 HA_WEIGHT=$(get_haproxy_server_state_value weight)
